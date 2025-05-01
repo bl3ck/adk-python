@@ -157,7 +157,7 @@ def validate_exclusive(ctx, param, value):
   return value
 
 
-@main.command("run")
+@main.command("run", cls=HelpfulCommand)
 @click.option(
     "--save_session",
     type=bool,
@@ -227,7 +227,7 @@ def cli_run(
   )
 
 
-@main.command("eval")
+@main.command("eval", cls=HelpfulCommand)
 @click.argument(
     "agent_module_file_path",
     type=click.Path(

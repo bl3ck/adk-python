@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from abc import ABC
 import asyncio
+import inspect
 import logging
 from typing import AsyncGenerator
 from typing import cast
@@ -190,6 +191,16 @@ class BaseLlmFlow(ABC):
       llm_request: LlmRequest,
   ) -> AsyncGenerator[Event, None]:
     """Receive data from model and process events using BaseLlmConnection."""
+    def get_author(llm_response):
+      """Get the author of the event.
+      
+      When the model returns transcription, the author is "user". Otherwise, the author is the agent.
+      """
+      if llm_response and llm_response.content and llm_response.content.role == "user":
+        return "user"
+      else:
+        return invocation_context.agent.name
+
     assert invocation_context.live_request_queue
     try:
       while True:
@@ -197,7 +208,7 @@ class BaseLlmFlow(ABC):
           model_response_event = Event(
               id=Event.new_id(),
               invocation_id=invocation_context.invocation_id,
-              author=invocation_context.agent.name,
+              author=get_author(llm_response),
           )
           async for event in self._postprocess_live(
               invocation_context,
@@ -437,7 +448,7 @@ class BaseLlmFlow(ABC):
       model_response_event: Event,
   ) -> AsyncGenerator[LlmResponse, None]:
     # Runs before_model_callback if it exists.
-    if response := self._handle_before_model_callback(
+    if response := await self._handle_before_model_callback(
         invocation_context, llm_request, model_response_event
     ):
       yield response
@@ -450,7 +461,7 @@ class BaseLlmFlow(ABC):
         invocation_context.live_request_queue = LiveRequestQueue()
         async for llm_response in self.run_live(invocation_context):
           # Runs after_model_callback if it exists.
-          if altered_llm_response := self._handle_after_model_callback(
+          if altered_llm_response := await self._handle_after_model_callback(
               invocation_context, llm_response, model_response_event
           ):
             llm_response = altered_llm_response
@@ -479,14 +490,14 @@ class BaseLlmFlow(ABC):
               llm_response,
           )
           # Runs after_model_callback if it exists.
-          if altered_llm_response := self._handle_after_model_callback(
+          if altered_llm_response := await self._handle_after_model_callback(
               invocation_context, llm_response, model_response_event
           ):
             llm_response = altered_llm_response
 
           yield llm_response
 
-  def _handle_before_model_callback(
+  async def _handle_before_model_callback(
       self,
       invocation_context: InvocationContext,
       llm_request: LlmRequest,
@@ -504,11 +515,16 @@ class BaseLlmFlow(ABC):
     callback_context = CallbackContext(
         invocation_context, event_actions=model_response_event.actions
     )
-    return agent.before_model_callback(
+    before_model_callback_content = agent.before_model_callback(
         callback_context=callback_context, llm_request=llm_request
     )
 
-  def _handle_after_model_callback(
+    if inspect.isawaitable(before_model_callback_content):
+      before_model_callback_content = await before_model_callback_content
+
+    return before_model_callback_content
+
+  async def _handle_after_model_callback(
       self,
       invocation_context: InvocationContext,
       llm_response: LlmResponse,
@@ -526,9 +542,14 @@ class BaseLlmFlow(ABC):
     callback_context = CallbackContext(
         invocation_context, event_actions=model_response_event.actions
     )
-    return agent.after_model_callback(
+    after_model_callback_content = agent.after_model_callback(
         callback_context=callback_context, llm_response=llm_response
     )
+
+    if inspect.isawaitable(after_model_callback_content):
+      after_model_callback_content = await after_model_callback_content
+
+    return after_model_callback_content
 
   def _finalize_model_response_event(
       self,

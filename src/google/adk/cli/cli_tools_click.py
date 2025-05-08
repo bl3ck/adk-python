@@ -167,6 +167,15 @@ def validate_exclusive(ctx, param, value):
     help="Optional. Whether to save the session to a json file on exit.",
 )
 @click.option(
+    "--session_id",
+    type=str,
+    help=(
+        "Optional. The session ID to save the session to on exit when"
+        " --save_session is set to true. User will be prompted to enter a"
+        " session ID if not set."
+    ),
+)
+@click.option(
     "--replay",
     type=click.Path(
         exists=True, dir_okay=False, file_okay=True, resolve_path=True
@@ -200,6 +209,7 @@ def validate_exclusive(ctx, param, value):
 def cli_run(
     agent: str,
     save_session: bool,
+    session_id: Optional[str],
     replay: Optional[str],
     resume: Optional[str],
 ):
@@ -223,6 +233,7 @@ def cli_run(
           input_file=replay,
           saved_session_file=resume,
           save_session=save_session,
+          session_id=session_id,
       )
   )
 
@@ -385,6 +396,11 @@ def cli_eval(
     default=False,
     help="Optional. Whether to enable cloud trace for telemetry.",
 )
+@click.option(
+    "--reload/--no-reload",
+    default=True,
+    help="Optional. Whether to enable auto reload for server.",
+)
 @click.argument(
     "agents_dir",
     type=click.Path(
@@ -400,6 +416,7 @@ def cli_web(
     allow_origins: Optional[list[str]] = None,
     port: int = 8000,
     trace_to_cloud: bool = False,
+    reload: bool = True,
 ):
   """Starts a FastAPI server with Web UI for agents.
 
@@ -451,7 +468,7 @@ def cli_web(
       app,
       host="0.0.0.0",
       port=port,
-      reload=True,
+      reload=reload,
   )
 
   server = uvicorn.Server(config)
@@ -507,6 +524,11 @@ def cli_web(
     default=False,
     help="Optional. Whether to enable cloud trace for telemetry.",
 )
+@click.option(
+    "--reload/--no-reload",
+    default=True,
+    help="Optional. Whether to enable auto reload for server.",
+)
 # The directory of agents, where each sub-directory is a single agent.
 # By default, it is the current working directory
 @click.argument(
@@ -524,6 +546,7 @@ def cli_api_server(
     allow_origins: Optional[list[str]] = None,
     port: int = 8000,
     trace_to_cloud: bool = False,
+    reload: bool = True,
 ):
   """Starts a FastAPI server for agents.
 
@@ -551,7 +574,7 @@ def cli_api_server(
       ),
       host="0.0.0.0",
       port=port,
-      reload=True,
+      reload=reload,
   )
   server = uvicorn.Server(config)
   server.run()

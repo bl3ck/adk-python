@@ -193,8 +193,9 @@ class BaseLlmFlow(ABC):
     """Receive data from model and process events using BaseLlmConnection."""
     def get_author(llm_response):
       """Get the author of the event.
-      
-      When the model returns transcription, the author is "user". Otherwise, the author is the agent.
+
+      When the model returns transcription, the author is "user". Otherwise, the
+      author is the agent.
       """
       if llm_response and llm_response.content and llm_response.content.role == "user":
         return "user"
@@ -260,7 +261,6 @@ class BaseLlmFlow(ABC):
 
     # Calls the LLM.
     model_response_event = Event(
-        id=Event.new_id(),
         invocation_id=invocation_context.invocation_id,
         author=invocation_context.agent.name,
         branch=invocation_context.branch,
@@ -272,6 +272,8 @@ class BaseLlmFlow(ABC):
       async for event in self._postprocess_async(
           invocation_context, llm_request, llm_response, model_response_event
       ):
+        # Use a new id for every event.
+        event.id = Event.new_id()
         yield event
 
   async def _preprocess_async(
@@ -509,20 +511,21 @@ class BaseLlmFlow(ABC):
     if not isinstance(agent, LlmAgent):
       return
 
-    if not agent.before_model_callback:
+    if not agent.canonical_before_model_callbacks:
       return
 
     callback_context = CallbackContext(
         invocation_context, event_actions=model_response_event.actions
     )
-    before_model_callback_content = agent.before_model_callback(
-        callback_context=callback_context, llm_request=llm_request
-    )
 
-    if inspect.isawaitable(before_model_callback_content):
-      before_model_callback_content = await before_model_callback_content
-
-    return before_model_callback_content
+    for callback in agent.canonical_before_model_callbacks:
+      before_model_callback_content = callback(
+          callback_context=callback_context, llm_request=llm_request
+      )
+      if inspect.isawaitable(before_model_callback_content):
+        before_model_callback_content = await before_model_callback_content
+      if before_model_callback_content:
+        return before_model_callback_content
 
   async def _handle_after_model_callback(
       self,
@@ -536,20 +539,21 @@ class BaseLlmFlow(ABC):
     if not isinstance(agent, LlmAgent):
       return
 
-    if not agent.after_model_callback:
+    if not agent.canonical_after_model_callbacks:
       return
 
     callback_context = CallbackContext(
         invocation_context, event_actions=model_response_event.actions
     )
-    after_model_callback_content = agent.after_model_callback(
-        callback_context=callback_context, llm_response=llm_response
-    )
 
-    if inspect.isawaitable(after_model_callback_content):
-      after_model_callback_content = await after_model_callback_content
-
-    return after_model_callback_content
+    for callback in agent.canonical_after_model_callbacks:
+      after_model_callback_content = callback(
+          callback_context=callback_context, llm_response=llm_response
+      )
+      if inspect.isawaitable(after_model_callback_content):
+        after_model_callback_content = await after_model_callback_content
+      if after_model_callback_content:
+        return after_model_callback_content
 
   def _finalize_model_response_event(
       self,
